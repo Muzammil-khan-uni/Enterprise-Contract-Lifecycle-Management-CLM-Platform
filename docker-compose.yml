@@ -1,0 +1,288 @@
+# ============================================================
+# CLM Platform
+# Docker Desktop + MongoDB Atlas
+#
+# Services:
+#   frontend       React application served by Nginx
+#   backend        Node.js / Express API + workers
+#   redis          Redis for caching, queues and refresh tokens
+#   elasticsearch  Full-text contract search
+#
+# MongoDB is NOT run locally.
+# The backend connects directly to MongoDB Atlas through MONGO_URI.
+# ============================================================
+
+services:
+  # ==========================================================
+  # REDIS
+  # ==========================================================
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+
+    command:
+      - redis-server
+      - --appendonly
+      - yes
+
+    volumes:
+      - redis-data:/data
+
+    ports:
+      - "6379:6379"
+
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+    networks:
+      - clm-network
+
+  # ==========================================================
+  # ELASTICSEARCH
+  # ==========================================================
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:9.5.2
+    restart: unless-stopped
+
+    environment:
+      discovery.type: single-node
+
+      # Local Docker development configuration.
+      # For a real production cluster, enable Elasticsearch
+      # security/TLS and use managed Elasticsearch/OpenSearch.
+      xpack.security.enabled: "false"
+
+      xpack.security.http.ssl.enabled: "false"
+      xpack.security.transport.ssl.enabled: "false"
+
+      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+
+    volumes:
+      - es-data:/usr/share/elasticsearch/data
+
+    ports:
+      - "9200:9200"
+
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -fsS http://localhost:9200/_cluster/health >/dev/null || exit 1",
+        ]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
+    networks:
+      - clm-network
+
+  # ==========================================================
+  # BACKEND API
+  # ==========================================================
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+
+    restart: unless-stopped
+
+    init: true
+
+    depends_on:
+      redis:
+        condition: service_healthy
+
+      elasticsearch:
+        condition: service_healthy
+
+    ports:
+      - "5000:5000"
+
+    environment:
+      # ------------------------------------------------------
+      # Application
+      # ------------------------------------------------------
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: 5000
+      API_VERSION: v1
+
+      # ------------------------------------------------------
+      # MongoDB Atlas
+      #
+      # IMPORTANT:
+      # Do NOT use mongodb://mongo:27017 here.
+      #
+      # MONGO_URI is loaded from the root .env file.
+      # ------------------------------------------------------
+      MONGO_URI: ${MONGO_URI:?MONGO_URI must be set to your MongoDB Atlas connection string}
+
+      # ------------------------------------------------------
+      # Redis
+      # Docker service-to-service communication uses the
+      # Docker service name "redis".
+      # ------------------------------------------------------
+      REDIS_URL: redis://redis:6379
+
+      # ------------------------------------------------------
+      # Elasticsearch
+      # Docker service-to-service communication uses the
+      # Docker service name "elasticsearch".
+      # ------------------------------------------------------
+      ELASTICSEARCH_URL: http://elasticsearch:9200
+
+      # ------------------------------------------------------
+      # Authentication
+      # ------------------------------------------------------
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?JWT_ACCESS_SECRET must be set}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?JWT_REFRESH_SECRET must be set}
+
+      # ------------------------------------------------------
+      # CORS
+      #
+      # Browser accesses frontend through:
+      # http://localhost:8080
+      # ------------------------------------------------------
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:8080}
+
+      # ------------------------------------------------------
+      # Cloudinary
+      # ------------------------------------------------------
+      CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:?CLOUDINARY_CLOUD_NAME must be set}
+      CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:?CLOUDINARY_API_KEY must be set}
+      CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:?CLOUDINARY_API_SECRET must be set}
+
+      # ------------------------------------------------------
+      # E-Signature Provider
+      # ------------------------------------------------------
+      SIGNATURE_PROVIDER: ${SIGNATURE_PROVIDER:?SIGNATURE_PROVIDER must be set}
+
+      # ------------------------------------------------------
+      # DocuSign
+      # ------------------------------------------------------
+      DOCUSIGN_INTEGRATION_KEY: ${DOCUSIGN_INTEGRATION_KEY:-}
+      DOCUSIGN_USER_ID: ${DOCUSIGN_USER_ID:-}
+      DOCUSIGN_ACCOUNT_ID: ${DOCUSIGN_ACCOUNT_ID:-}
+      DOCUSIGN_PRIVATE_KEY: ${DOCUSIGN_PRIVATE_KEY:-}
+
+      DOCUSIGN_OAUTH_BASE_URL: ${DOCUSIGN_OAUTH_BASE_URL:-https://account-d.docusign.com}
+
+      DOCUSIGN_API_BASE_URL: ${DOCUSIGN_API_BASE_URL:-https://demo.docusign.net/restapi}
+
+      DOCUSIGN_WEBHOOK_HMAC_KEY: ${DOCUSIGN_WEBHOOK_HMAC_KEY:-}
+
+      # ------------------------------------------------------
+      # Adobe Acrobat Sign
+      # ------------------------------------------------------
+      ADOBESIGN_CLIENT_ID: ${ADOBESIGN_CLIENT_ID:-}
+      ADOBESIGN_CLIENT_SECRET: ${ADOBESIGN_CLIENT_SECRET:-}
+      ADOBESIGN_REFRESH_TOKEN: ${ADOBESIGN_REFRESH_TOKEN:-}
+
+      ADOBESIGN_BASE_URI: ${ADOBESIGN_BASE_URI:-https://api.na1.adobesign.com}
+
+      ADOBESIGN_WEBHOOK_CLIENT_ID: ${ADOBESIGN_WEBHOOK_CLIENT_ID:-}
+
+      # ------------------------------------------------------
+      # Email
+      # ------------------------------------------------------
+      EMAIL_FROM: ${EMAIL_FROM:-no-reply@clm-platform.local}
+
+      SMTP_HOST: ${SMTP_HOST:?SMTP_HOST must be set}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:?SMTP_USER must be set}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:?SMTP_PASSWORD must be set}
+
+      # ------------------------------------------------------
+      # Application URLs
+      # ------------------------------------------------------
+      APP_BASE_URL: ${APP_BASE_URL:-http://localhost:8080}
+
+      API_PUBLIC_BASE_URL: ${API_PUBLIC_BASE_URL:?API_PUBLIC_BASE_URL must be set}
+
+      # ------------------------------------------------------
+      # Workers
+      # ------------------------------------------------------
+      ENABLE_WORKERS: ${ENABLE_WORKERS:-true}
+
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'node -e "require(''http'').get(''http://127.0.0.1:5000/api/v1/health'',r=>process.exit(r.statusCode>=200&&r.statusCode<400?0:1)).on(''error'',()=>process.exit(1))"',
+        ]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+    networks:
+      - clm-network
+
+  # ==========================================================
+  # FRONTEND
+  # ==========================================================
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api/v1}
+        VITE_SOCKET_URL: ${VITE_SOCKET_URL:-/}
+
+    restart: unless-stopped
+
+    init: true
+
+    depends_on:
+      backend:
+        condition: service_healthy
+
+    ports:
+      - "8080:80"
+
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget --no-verbose --tries=1 --spider http://127.0.0.1/ || exit 1",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+    networks:
+      - clm-network
+
+# ============================================================
+# VOLUMES
+# ============================================================
+#
+# MongoDB volume intentionally does NOT exist because MongoDB
+# is hosted by MongoDB Atlas.
+#
+# Redis and Elasticsearch data remain persistent across
+# container recreation.
+# ============================================================
+
+volumes:
+  redis-data:
+    name: clm-redis-data
+
+  es-data:
+    name: clm-elasticsearch-data
+
+# ============================================================
+# NETWORK
+# ============================================================
+
+networks:
+  clm-network:
+    name: clm-network
+    driver: bridge

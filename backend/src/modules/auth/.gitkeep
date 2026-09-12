@@ -1,0 +1,2 @@
+# Reserved for the auth module (controller/service/repository/model/routes).
+# Implemented in the phase that covers this domain — see architecture doc §9.
