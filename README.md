@@ -540,7 +540,7 @@ Software Engineer · Full-Stack (MERN) · Flutter &amp; Android
 [![LinkedIn](https://img.shields.io/badge/LinkedIn-Connect-0A66C2?style=for-the-badge&logo=linkedin&logoColor=white)](https://www.linkedin.com/in/muhammed-muzammil-khan-617155373/)
 [![GitHub](https://img.shields.io/badge/GitHub-Muzammil--khan--uni-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/Muzammil-khan-uni)
 
-📍 Rawalpindi, Pakistan &nbsp;|&nbsp; 📞 +92 330 4580951
+
 
 </div>
 
