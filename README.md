@@ -548,7 +548,7 @@ Software Engineer · Full-Stack (MERN) · Flutter &amp; Android
 
 ## 📄 License
 
-This project's license has not been finalized in this repository yet — add a `LICENSE` file to declare the terms under which others may use, modify, or distribute this code.
+This project is licensed under the **GNU General Public License v2.0**. See the [`LICENSE`](./LICENSE) file for full terms.
 
 ---
 
